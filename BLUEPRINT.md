@@ -1,6 +1,6 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 6 (Nov 17, 2026)
+Blueprint version: 8 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
@@ -82,6 +82,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 
 - Kotlin, Jetpack Compose (BOM 2024.09.00), OkHttp (+ okhttp-sse), AndroidX security-crypto.
 - Built by GitHub Actions (debug APK, no signing keys).
+- Workflow `.github/workflows/build.yml` needs `actions: write` permission (already set in the file) to delete old artifacts.
 - Addresses and passwords are stored on the phone only, encrypted (EncryptedSharedPreferences).
 - Files: `MailTm.kt` (API client), `MainActivity.kt` (state and screens), `Extract.kt` (finds links and verification codes in message text), `Store.kt` (encrypted storage shared by the app and the watcher), `MailWatch.kt` (background watcher service and notifications), `res/drawable` (icons).
 
@@ -99,7 +100,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 ## Constraints and decisions
 
 - Phone only (Termux), no PC.
-- GitHub free plan: keep builds few; artifact retention can be shortened to 3 days.
+- GitHub free plan: keep builds few. After every successful build the workflow deletes all older `mailapp-debug` artifacts right away, so only the newest APK is left (added Nov 17). No expiry timer is used. If a build fails, the previous APK stays.
 - Icons: Lucide (ISC), credits in ICONS.md and the About screen.
 - License (Nov 17): proprietary, all rights reserved (`LICENSE` file, copyright line in About). Third-party parts keep their own licenses (Lucide ISC in ICONS.md, Apache 2.0 libraries, Mail.tm terms). A license only gives legal protection, it cannot stop someone from copying an APK. Keep the repo public or make it private (free private repos exist, but free Actions minutes are limited).
 - Not using mail.com or other IMAP providers anymore.

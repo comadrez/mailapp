@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,3 +25,15 @@ jobs:
         with:
           name: mailapp-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+      # Only runs if the build and upload worked: delete every older mailapp-debug artifact,
+      # so the newest APK is the only one left.
+      - name: Delete older debug APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?name=mailapp-debug&per_page=100" \
+            --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' |
+          while read -r id; do
+            echo "Deleting old artifact $id"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+          done
