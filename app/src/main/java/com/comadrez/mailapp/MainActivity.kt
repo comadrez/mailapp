@@ -1,13 +1,18 @@
 package com.comadrez.mailapp
 
 import android.app.Application
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.text.format.DateUtils
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +31,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -78,6 +90,9 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
     var onlyUnread by mutableStateOf(false)
     var openMsg by mutableStateOf<Msg?>(null)
     var body by mutableStateOf("")
+    var attachments by mutableStateOf(listOf<Att>())
+    var refreshing by mutableStateOf(false)
+    var savingAtt by mutableStateOf<String?>(null)
     private var loadingDomains = false
 
     val current: Acct? get() = accounts.firstOrNull { it.id == currentId } ?: accounts.firstOrNull()
@@ -232,14 +247,54 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Pull-to-refresh: shows the pull indicator instead of the top progress bar. */
+    fun pullRefresh() {
+        val a = current ?: return
+        viewModelScope.launch {
+            refreshing = true
+            error = null
+            try {
+                val m = authed(a) { MailTm.messages(it) }
+                if (current?.id == a.id) messages = m
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn't refresh"
+            }
+            refreshing = false
+        }
+    }
+
+    /** Downloads one attachment into the file the user picked (Storage Access Framework). */
+    fun saveAttachment(att: Att, uri: Uri) {
+        val a = current ?: return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            savingAtt = att.id
+            error = null
+            try {
+                authed(a) { t ->
+                    val out = app.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("Can't write to that location")
+                    out.use { MailTm.download(t, att.url, it) }
+                }
+                Toast.makeText(app, "Saved ${att.name}", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn't save the attachment"
+            }
+            savingAtt = null
+        }
+    }
+
     fun open(m: Msg) {
         val a = current ?: return
         openMsg = m
         body = ""
+        attachments = emptyList()
         error = null
         screen = "read"
         task {
-            body = authed(a) { MailTm.body(it, m.id) }
+            val d = authed(a) { MailTm.detail(it, m.id) }
+            body = d.text
+            attachments = d.attachments
             if (!m.seen) {
                 runCatching { authed(a) { MailTm.markSeen(it, m.id) } }
                 messages = messages.map { if (it.id == m.id) it.copy(seen = true) else it }
@@ -517,7 +572,12 @@ fun HomeScreen(vm: DriftVM) {
             vm.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
             }
-            LazyColumn(Modifier.weight(1f)) {
+            PullToRefreshBox(
+                isRefreshing = vm.refreshing,
+                onRefresh = { vm.pullRefresh() },
+                modifier = Modifier.weight(1f)
+            ) {
+            LazyColumn(Modifier.fillMaxSize()) {
                 if (list.isEmpty() && !vm.loading) {
                     item {
                         Column(
@@ -538,6 +598,7 @@ fun HomeScreen(vm: DriftVM) {
                     SwipeRow(m, onDelete = { vm.deleteInline(m) }, onClick = { vm.open(m) })
                     HorizontalDivider()
                 }
+            }
             }
         }
     }
@@ -637,6 +698,37 @@ private fun fmtShort(ms: Long): String = when {
 @Composable
 fun ReadScreen(vm: DriftVM) {
     val m = vm.openMsg
+    val ctx = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val uri = LocalUriHandler.current
+    var pendingLink by remember { mutableStateOf<String?>(null) }
+    var pendingAtt by remember { mutableStateOf<Att?>(null) }
+    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { dest ->
+        val att = pendingAtt
+        if (dest != null && att != null) vm.saveAttachment(att, dest)
+    }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val linked = remember(vm.body, linkColor) {
+        buildAnnotatedString {
+            val text = vm.body
+            var last = 0
+            for (r in findLinkRanges(text)) {
+                append(text.substring(last, r.first))
+                val url = text.substring(r.first, r.last + 1)
+                withLink(
+                    LinkAnnotation.Clickable(
+                        tag = url,
+                        styles = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)),
+                        linkInteractionListener = LinkInteractionListener { pendingLink = url }
+                    )
+                ) { append(url) }
+                last = r.last + 1
+            }
+            append(text.substring(last))
+        }
+    }
+    val codes = remember(vm.body, m?.subject) { findCodes((m?.subject ?: "") + "\n" + vm.body) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -666,8 +758,72 @@ fun ReadScreen(vm: DriftVM) {
             }
             if (vm.loading) CircularProgressIndicator()
             vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            SelectionContainer { Text(vm.body) }
+            if (codes.isNotEmpty()) {
+                Text("Verification code", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                codes.forEach { c ->
+                    FilledTonalButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(c))
+                            Toast.makeText(ctx, "Code copied", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Copy  $c") }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            if (vm.attachments.isNotEmpty()) {
+                Text("Attachments", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                vm.attachments.forEach { att ->
+                    OutlinedCard(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Row(
+                            Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(att.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    Formatter.formatShortFileSize(ctx, att.size),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            TextButton(
+                                onClick = { pendingAtt = att; saver.launch(att.name) },
+                                enabled = vm.savingAtt == null
+                            ) { Text(if (vm.savingAtt == att.id) "Saving..." else "Save") }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+            SelectionContainer { Text(linked) }
         }
+    }
+
+    pendingLink?.let { url ->
+        AlertDialog(
+            onDismissRequest = { pendingLink = null },
+            title = { Text("Open this link?") },
+            text = {
+                Column {
+                    Text(url, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Links in disposable email are often spam or phishing. Only open links you expect.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingLink = null
+                    try {
+                        uri.openUri(url)
+                    } catch (e: ActivityNotFoundException) {
+                        Toast.makeText(ctx, "No app can open this link", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Open") }
+            },
+            dismissButton = { TextButton(onClick = { pendingLink = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -681,7 +837,7 @@ fun AboutScreen(vm: DriftVM) {
         "Not private. Mail is stored on Mail.tm's servers, so never use it for sensitive information.",
         "Anyone who knows the address and password can read that mailbox.",
         "Mail is checked every 10 seconds while the app is open. There are no notifications when the app is closed.",
-        "Attachments cannot be opened yet, and links inside emails are not tappable (you can select and copy text).",
+        "Attachments can be saved to your phone but not previewed. Links in emails ask for confirmation before opening. Codes are detected automatically and may occasionally be missed.",
         "Some websites block disposable email domains, so a few sign-ups may be refused.",
         "The domain list comes from Mail.tm and can change. Too many requests in a short time can show a \"wait a few seconds\" error.",
         "Your addresses and passwords are saved encrypted on this phone only."
@@ -705,7 +861,7 @@ fun AboutScreen(vm: DriftVM) {
             )
             Spacer(Modifier.height(8.dp))
             Text("Driftbox", style = MaterialTheme.typography.titleLarge)
-            Text("Version 0.4", style = MaterialTheme.typography.bodySmall)
+            Text("Version 0.6", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Driftbox gives you free disposable email addresses. The mailboxes are provided by the free Mail.tm API. " +

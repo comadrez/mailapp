@@ -22,6 +22,10 @@ data class Msg(
     val date: Long
 )
 
+data class Att(val id: String, val name: String, val type: String, val size: Long, val url: String)
+
+data class Detail(val text: String, val attachments: List<Att>)
+
 /** Thin client for the free Mail.tm API (https://docs.mail.tm). */
 object MailTm {
     private const val BASE = "https://api.mail.tm"
@@ -109,13 +113,36 @@ object MailTm {
         }.sortedByDescending { it.date }
     }
 
-    fun body(token: String, id: String): String {
+    fun detail(token: String, id: String): Detail {
         val o = JSONObject(call("GET", "/messages/$id", token = token))
         val text = o.optString("text")
-        if (text.isNotBlank()) return text.trim()
-        val html = o.optJSONArray("html")
-        val joined = if (html != null) (0 until html.length()).joinToString("\n") { html.optString(it) } else ""
-        return stripHtml(joined).ifBlank { "(empty message)" }
+        val body = if (text.isNotBlank()) text.trim() else {
+            val html = o.optJSONArray("html")
+            val joined = if (html != null) (0 until html.length()).joinToString("\n") { html.optString(it) } else ""
+            stripHtml(joined).ifBlank { "(empty message)" }
+        }
+        val arr = o.optJSONArray("attachments") ?: JSONArray()
+        val atts = (0 until arr.length()).map { arr.getJSONObject(it) }.map { a ->
+            val aid = a.optString("id")
+            Att(
+                id = aid,
+                name = a.optString("filename").ifBlank { "attachment" },
+                type = a.optString("contentType"),
+                size = a.optLong("size"),
+                url = a.optString("downloadUrl").removePrefix(BASE).ifBlank { "/messages/$id/attachment/$aid" }
+            )
+        }
+        return Detail(body, atts)
+    }
+
+    /** Streams an attachment into [out]. [path] is the API path, e.g. /messages/ID/attachment/ID. */
+    fun download(token: String, path: String, out: java.io.OutputStream) {
+        val req = Request.Builder().url(BASE + path).header("Authorization", "Bearer $token").get().build()
+        client.newCall(req).execute().use { r ->
+            if (!r.isSuccessful) throw ApiError(r.code, if (r.code == 401) "Session expired" else "Download failed (${r.code})")
+            val src = r.body?.byteStream() ?: throw ApiError(0, "Empty download")
+            src.use { it.copyTo(out) }
+        }
     }
 
     fun markSeen(token: String, id: String) { call("PATCH", "/messages/$id", token = token) }
