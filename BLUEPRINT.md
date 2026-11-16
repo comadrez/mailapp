@@ -1,6 +1,6 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 4 (Nov 17, 2026)
+Blueprint version: 5 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
@@ -20,7 +20,7 @@ Next action: push v0.6, wait for the green check in Actions, install the APK ove
 - [ ] **v0.6** Quality of life: tappable links (with an "Open this link?" confirmation), one-tap copy of verification codes, attachment download (save to a file you pick), pull-to-refresh (Compose BOM raised to 2024.09.00). **<- we are here**
 - [ ] **v0.7** Live updates (SSE) instead of 10 second polling, and new-mail notifications.
 - [ ] **v0.8** Extras: address expiry reminder, auto-delete of old addresses, maybe a second provider (mail.gw) as an option.
-- [ ] **v1.0** Release: release signing, final polish, short privacy note.
+- [ ] **v1.0** Release: release signing, code shrinking/obfuscation (R8) to make copying harder, final polish, short privacy note.
 
 ## v0.6 test checklist
 
@@ -85,6 +85,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 - Phone only (Termux), no PC.
 - GitHub free plan: keep builds few; artifact retention can be shortened to 3 days.
 - Icons: Lucide (ISC), credits in ICONS.md and the About screen.
+- License (Nov 17): proprietary, all rights reserved (`LICENSE` file, copyright line in About). Third-party parts keep their own licenses (Lucide ISC in ICONS.md, Apache 2.0 libraries, Mail.tm terms). A license only gives legal protection, it cannot stop someone from copying an APK. Keep the repo public or make it private (free private repos exist, but free Actions minutes are limited).
 - Not using mail.com or other IMAP providers anymore.
 - Name: Driftbox. Normal-email-app interface: login first, small Register link at the bottom.
 - Account switcher button goes at the top right when there is more than one address.

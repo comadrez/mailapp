@@ -1,0 +1,26 @@
+Driftbox
+Copyright (c) 2026 comadrez. All rights reserved.
+
+This software (the source code, the app, and the original artwork such as the
+app icon) is proprietary. No license is granted except the following:
+
+1. You may view the source code in this repository for personal reference.
+2. You may install and use the official Driftbox app for personal use.
+
+Without written permission from the copyright holder, you may NOT:
+
+- copy, fork for redistribution, modify, or create derivative works of the code
+  or the app;
+- redistribute, publish, sell, or sublicense the code or any build of the app
+  (including modified, repackaged, or re-signed APKs);
+- remove or change this notice, the "Powered by mail.tm" credit, or any
+  third-party credit.
+
+Third-party components keep their own licenses and are not covered by this
+file: Lucide icons (ISC, see ICONS.md), AndroidX / Jetpack Compose and OkHttp
+(Apache License 2.0), and the Mail.tm service (https://mail.tm, its own terms).
+Driftbox is not affiliated with Mail.tm.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE COPYRIGHT
+HOLDER IS NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM
+THE USE OF THE SOFTWARE.

@@ -877,6 +877,11 @@ fun AboutScreen(vm: DriftVM) {
             Spacer(Modifier.height(16.dp))
             Text("Credits", style = MaterialTheme.typography.titleMedium)
             Text("Icons: Lucide (ISC license).", style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Copyright \u00A9 2026 comadrez. All rights reserved. Driftbox may not be copied, modified or redistributed without permission.",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
