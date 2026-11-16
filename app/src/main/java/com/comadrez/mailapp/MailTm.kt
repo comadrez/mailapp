@@ -1,0 +1,138 @@
+package com.comadrez.mailapp
+
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.SecureRandom
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
+
+data class Acct(val id: String, val address: String, val password: String)
+
+data class Msg(
+    val id: String,
+    val from: String,
+    val subject: String,
+    val intro: String,
+    val seen: Boolean,
+    val date: Long
+)
+
+/** Thin client for the free Mail.tm API (https://docs.mail.tm). */
+object MailTm {
+    private const val BASE = "https://api.mail.tm"
+    private val client = OkHttpClient()
+    private val JSON_TYPE = "application/json".toMediaType()
+    private val MERGE_TYPE = "application/merge-patch+json".toMediaType()
+    private val rnd = SecureRandom()
+
+    class ApiError(val code: Int, message: String) : Exception(message)
+
+    fun randomString(n: Int, chars: String = "abcdefghijklmnopqrstuvwxyz0123456789"): String =
+        (1..n).map { chars[rnd.nextInt(chars.length)] }.joinToString("")
+
+    private fun call(method: String, path: String, body: String? = null, token: String? = null): String {
+        val rb = Request.Builder().url(BASE + path)
+        if (token != null) rb.header("Authorization", "Bearer $token")
+        when (method) {
+            "GET" -> rb.get()
+            "DELETE" -> rb.delete()
+            "PATCH" -> rb.patch((body ?: "{}").toRequestBody(MERGE_TYPE))
+            else -> rb.post((body ?: "{}").toRequestBody(JSON_TYPE))
+        }
+        client.newCall(rb.build()).execute().use { r ->
+            val text = r.body?.string() ?: ""
+            if (!r.isSuccessful) {
+                throw ApiError(
+                    r.code,
+                    when (r.code) {
+                        401 -> "Session expired"
+                        404 -> "Not found"
+                        422 -> "That address is invalid or already taken"
+                        429 -> "Too many requests, wait a few seconds"
+                        else -> "Server error (${r.code})"
+                    }
+                )
+            }
+            return text
+        }
+    }
+
+    private fun members(text: String): JSONArray {
+        val t = text.trim()
+        return if (t.startsWith("[")) JSONArray(t)
+        else JSONObject(t).optJSONArray("hydra:member") ?: JSONArray()
+    }
+
+    fun domains(): List<String> {
+        val arr = members(call("GET", "/domains"))
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+            .filter { it.optBoolean("isActive", true) && !it.optBoolean("isPrivate", false) }
+            .map { it.getString("domain") }
+    }
+
+    fun createAccount(address: String, password: String): String {
+        val b = JSONObject().put("address", address).put("password", password).toString()
+        return JSONObject(call("POST", "/accounts", b)).getString("id")
+    }
+
+    fun token(address: String, password: String): String {
+        val b = JSONObject().put("address", address).put("password", password).toString()
+        return JSONObject(call("POST", "/token", b)).getString("token")
+    }
+
+    fun messages(token: String): List<Msg> {
+        val arr = members(call("GET", "/messages", token = token))
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            val f = o.optJSONObject("from")
+            val from = f?.optString("name").orEmpty()
+                .ifBlank { f?.optString("address").orEmpty() }
+                .ifBlank { "(unknown)" }
+            Msg(
+                id = o.getString("id"),
+                from = from,
+                subject = o.optString("subject").ifBlank { "(no subject)" },
+                intro = o.optString("intro"),
+                seen = o.optBoolean("seen"),
+                date = parseDate(o.optString("createdAt"))
+            )
+        }.sortedByDescending { it.date }
+    }
+
+    fun body(token: String, id: String): String {
+        val o = JSONObject(call("GET", "/messages/$id", token = token))
+        val text = o.optString("text")
+        if (text.isNotBlank()) return text.trim()
+        val html = o.optJSONArray("html")
+        val joined = if (html != null) (0 until html.length()).joinToString("\n") { html.optString(it) } else ""
+        return stripHtml(joined).ifBlank { "(empty message)" }
+    }
+
+    fun markSeen(token: String, id: String) { call("PATCH", "/messages/$id", token = token) }
+
+    fun deleteMessage(token: String, id: String) { call("DELETE", "/messages/$id", token = token) }
+
+    fun deleteAccount(token: String, id: String) { call("DELETE", "/accounts/$id", token = token) }
+
+    private fun parseDate(s: String): Long = try {
+        val f = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        f.timeZone = TimeZone.getTimeZone("UTC")
+        f.parse(s.take(19))?.time ?: 0L
+    } catch (e: Exception) {
+        0L
+    }
+
+    private fun stripHtml(html: String): String = html
+        .replace(Regex("(?is)<(style|script).*?</\\1>"), "")
+        .replace(Regex("(?i)<br\\s*/?>|</p>|</div>|</tr>"), "\n")
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
+        .replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}

@@ -10,8 +10,8 @@ android {
         applicationId = "com.comadrez.mailapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -34,7 +34,5 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.sun.mail:android-mail:1.6.7")
-    implementation("com.sun.mail:android-activation:1.6.7")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
