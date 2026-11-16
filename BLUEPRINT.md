@@ -1,14 +1,14 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 9 (Nov 17, 2026)
+Blueprint version: 10 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
 ## Where we are
 
-**>>> v0.8 Driftbox: written, waiting for the first build and phone test <<<**
+**>>> v1.0 Driftbox: written, waiting for signing setup, first release build and phone test <<<**
 
-Next action: push v0.8, wait for the green check in Actions, install the APK over the old one, and run the v0.8 test checklist below. If it all works, the next milestone is v1.0 (release), unless you want the optional mail.gw provider first.
+Next action: (1) push v1.0 and check the normal debug build is green, (2) do the one-time Release signing setup below, (3) run the Release workflow and install the signed APK, (4) run the v1.0 test checklist. Optional after that: v0.9 (mail.gw).
 
 ## Milestones
 
@@ -19,11 +19,52 @@ Next action: push v0.8, wait for the green check in Actions, install the APK ove
 - [x] **v0.5** Fix pass from the first real test. Skipped: v0.4 built green and passed the whole checklist on the phone (Nov 17). New bugs found later go into the next version.
 - [x] **v0.6** Quality of life: tappable links (with an "Open this link?" confirmation), one-tap copy of verification codes, attachment download (save to a file you pick), pull-to-refresh (Compose BOM raised to 2024.09.00).
 - [x] **v0.7** Live updates (Mercure/SSE) instead of 10 second polling, with a check every minute as backup, and optional new-mail notifications (menu > Notifications, background service with a small ongoing notification).
-- [ ] **v0.8** Extras: new Settings screen (menu > Settings) with the Notifications switch, an address age reminder (Off / 1 / 3 / 7 / 30 days: banner on the inbox plus a notification if notifications are on) and auto-delete of old addresses (same choices, with a confirmation, runs only while the app is open). **<- we are here**
+- [x] **v0.8** Extras: new Settings screen (menu > Settings) with the Notifications switch, an address age reminder (Off / 1 / 3 / 7 / 30 days: banner on the inbox plus a notification if notifications are on) and auto-delete of old addresses (same choices, with a confirmation, runs only while the app is open).
 - [ ] **v0.9 (optional)** Second provider mail.gw: same API at api.mail.gw and mercure.mail.gw, needs a provider field on every saved address.
-- [ ] **v1.0** Release: release signing, code shrinking/obfuscation (R8) to make copying harder, final polish, short privacy note.
+- [ ] **v1.0** Release: signed release APK built by a separate Release workflow (tag `v*` or manual run), code shrinking/obfuscation (R8), debug builds now install side by side as "Driftbox (debug)", privacy note in About and PRIVACY.md, notifications hide content on the lock screen. **<- we are here**
 
-## v0.8 test checklist
+## Release signing (one time, in Termux)
+
+The release APK must always be signed with the same key, or Android will refuse to install it over the previous one. Make the key once and keep it safe.
+
+1. Make the key (choose a password, use the same one everywhere below):
+
+```
+pkg install openjdk-17
+keytool -genkeypair -v -keystore ~/driftbox.jks -alias driftbox -keyalg RSA -keysize 2048 -validity 10000 -storepass 'YOUR_PASSWORD' -keypass 'YOUR_PASSWORD' -dname "CN=Driftbox, O=comadrez, C=US"
+```
+
+2. **Back up `~/driftbox.jks` and the password somewhere safe (not in the repo).** If you lose them you can never update the app again, only reinstall it as a new one. `.gitignore` already blocks `*.jks` and `*.b64` from being pushed.
+
+3. Make the text version of the key and copy it:
+
+```
+base64 -w0 ~/driftbox.jks > ~/driftbox.jks.b64
+cat ~/driftbox.jks.b64
+```
+
+4. On GitHub: repo > Settings > Secrets and variables > Actions > New repository secret. Add two secrets:
+   - `KEYSTORE_BASE64`: the long text from step 3
+   - `KEYSTORE_PASSWORD`: your password
+
+5. Build the release: GitHub > Actions > "Release APK" > Run workflow (or push a tag: `git tag v1.0 && git push origin v1.0`). When it is green, download the `driftbox-release` artifact. Older release artifacts are deleted automatically.
+
+6. The first signed install: the release app has the same id as the old debug-signed app (v0.4 to v0.8) but a different signature, so **uninstall the old Driftbox first**. Saved addresses are lost with it (Android backup is off), but you can sign in again with each address and password.
+
+Debug builds (every push) now install as a separate app called "Driftbox (debug)", so they no longer replace the release app. They have their own saved addresses.
+
+## v1.0 test checklist
+
+- [ ] Normal debug build (push) is green and installs as "Driftbox (debug)" next to the old app
+- [ ] Release workflow is green (if R8 reports missing classes or the build fails, send the error log)
+- [ ] Signed release APK installs after uninstalling the old app and opens as "Driftbox"
+- [ ] Release app: register or sign in, receive mail, open a message, swipe delete (shrinking can break things that only show in release, so test every screen)
+- [ ] Release app: Settings > Notifications works, a "New mail" notification appears with the app closed
+- [ ] Lock screen set to hide sensitive content: the notification shows only "New mail" and the address
+- [ ] About shows "Version 1.0", a Privacy section and the Mail.tm link
+- [ ] Release app crashes? Send me what you did and any error text (release logs keep file and line numbers)
+
+## v0.8 test checklist (done, no problems reported)
 
 - [ ] GitHub Actions build is green
 - [ ] APK installs over v0.7, addresses are still there, About says "Version 0.8"
@@ -95,8 +136,10 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 ## Tech
 
 - Kotlin, Jetpack Compose (BOM 2024.09.00), OkHttp (+ okhttp-sse), AndroidX security-crypto.
-- Built by GitHub Actions (debug APK, no signing keys).
-- Workflow `.github/workflows/build.yml` needs `actions: write` permission (already set in the file) to delete old artifacts.
+- Built by GitHub Actions: `build.yml` makes the debug APK on every push (no keys needed); `release.yml` makes the signed, shrunk (R8) release APK on a `v*` tag or manual run, using the secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD` (key alias is `driftbox`).
+- Both workflows need `actions: write` permission (already set in the files) to delete old artifacts.
+- App ids: release `com.comadrez.mailapp`, debug `com.comadrez.mailapp.debug`.
+- Shrinking rules live in `app/proguard-rules.pro` (Tink and OkHttp rules).
 - Addresses and passwords are stored on the phone only, encrypted (EncryptedSharedPreferences).
 - Files: `MailTm.kt` (API client), `MainActivity.kt` (state and screens), `Extract.kt` (finds links and verification codes in message text), `Store.kt` (encrypted storage shared by the app and the watcher, also the reminder and auto-delete settings), `MailWatch.kt` (background watcher service and notifications), `res/drawable` (icons).
 
@@ -132,6 +175,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 - Attachments can be saved but not previewed. Links ask for confirmation first. Verification codes are guessed from text (a number of 4-8 digits with a word like "code" or "verify" just before it), so some can be missed.
 - Addresses can be removed by Mail.tm at any time; mail is not private.
 - If Mail.tm objects to the credit being only in About, move the link back to the main screen.
+- Privacy note: About screen and `PRIVACY.md`.
 
 ## How to use this file
 

@@ -1114,7 +1114,7 @@ fun AboutScreen(vm: DriftVM) {
             )
             Spacer(Modifier.height(8.dp))
             Text("Driftbox", style = MaterialTheme.typography.titleLarge)
-            Text("Version 0.8", style = MaterialTheme.typography.bodySmall)
+            Text("Version 1.0", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Driftbox gives you free disposable email addresses. The mailboxes are provided by the free Mail.tm API. " +
@@ -1127,6 +1127,16 @@ fun AboutScreen(vm: DriftVM) {
             limits.forEach {
                 Text("\u2022 $it", modifier = Modifier.padding(vertical = 3.dp))
             }
+            Spacer(Modifier.height(16.dp))
+            Text("Privacy", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            listOf(
+                "Driftbox has no accounts, no ads and no analytics, and it sends nothing to the developer.",
+                "It only talks to Mail.tm (api.mail.tm and mercure.mail.tm) to create addresses and read mail.",
+                "Your addresses and passwords are stored encrypted on this phone and are not backed up.",
+                "Notifications hide the sender and subject when your lock screen hides sensitive content.",
+                "Emails live on Mail.tm's servers, which are governed by Mail.tm's own terms and privacy policy."
+            ).forEach { Text("\u2022 $it", modifier = Modifier.padding(vertical = 3.dp)) }
             Spacer(Modifier.height(16.dp))
             Text("Credits", style = MaterialTheme.typography.titleMedium)
             Text("Icons: Lucide (ISC license).", style = MaterialTheme.typography.bodySmall)

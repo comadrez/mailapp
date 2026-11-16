@@ -82,6 +82,14 @@ object Notifs {
             .setStyle(Notification.BigTextStyle().bigText(m.subject + "\n" + m.intro))
             .setContentIntent(openApp(ctx))
             .setAutoCancel(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                Notification.Builder(ctx, CH_MAIL)
+                    .setSmallIcon(R.drawable.ic_mail)
+                    .setContentTitle("New mail")
+                    .setContentText(a.address)
+                    .build()
+            )
             .build()
         try {
             ctx.getSystemService(NotificationManager::class.java).notify(m.id.hashCode(), n)

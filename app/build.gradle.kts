@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Signing info comes from environment variables (set by the Release workflow from GitHub secrets).
+val ksPath: String? = System.getenv("KEYSTORE_PATH")
+
 android {
     namespace = "com.comadrez.mailapp"
     compileSdk = 34
@@ -10,8 +13,32 @@ android {
         applicationId = "com.comadrez.mailapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "1.0"
+        manifestPlaceholders["appLabel"] = "Driftbox"
+    }
+    signingConfigs {
+        if (ksPath != null) {
+            create("release") {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = "driftbox"
+                keyPassword = System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (ksPath != null) signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            // Debug builds install next to the release app instead of replacing it.
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Driftbox (debug)"
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
