@@ -85,6 +85,11 @@ object MailTm {
         return JSONObject(call("POST", "/token", b)).getString("token")
     }
 
+    fun me(token: String): Pair<String, String> {
+        val o = JSONObject(call("GET", "/me", token = token))
+        return o.getString("id") to o.getString("address")
+    }
+
     fun messages(token: String): List<Msg> {
         val arr = members(call("GET", "/messages", token = token))
         return (0 until arr.length()).map { i ->
