@@ -1,14 +1,14 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 5 (Nov 17, 2026)
+Blueprint version: 6 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
 ## Where we are
 
-**>>> v0.6 Driftbox: written, waiting for the first build and phone test <<<**
+**>>> v0.7 Driftbox: written, waiting for the first build and phone test <<<**
 
-Next action: push v0.6, wait for the green check in Actions, install the APK over the old one, and run the v0.6 test checklist below. If it all works, the next milestone is v0.7.
+Next action: push v0.7, wait for the green check in Actions, install the APK over the old one, allow notifications when asked, and run the v0.7 test checklist below. If it all works, the next milestone is v0.8.
 
 ## Milestones
 
@@ -17,12 +17,27 @@ Next action: push v0.6, wait for the green check in Actions, install the APK ove
 - [x] **v0.3** Pivot to temp mail with the free Mail.tm API (basic UI).
 - [x] **v0.4** Driftbox: renamed, login-first screen with a small Register link, Register screen (username, domain picker, password, random generator), account switcher at the top right when there are several addresses, encrypted storage, swipe to delete, filter chips, menu, About screen with all limits and the Mail.tm credit.
 - [x] **v0.5** Fix pass from the first real test. Skipped: v0.4 built green and passed the whole checklist on the phone (Nov 17). New bugs found later go into the next version.
-- [ ] **v0.6** Quality of life: tappable links (with an "Open this link?" confirmation), one-tap copy of verification codes, attachment download (save to a file you pick), pull-to-refresh (Compose BOM raised to 2024.09.00). **<- we are here**
-- [ ] **v0.7** Live updates (SSE) instead of 10 second polling, and new-mail notifications.
+- [x] **v0.6** Quality of life: tappable links (with an "Open this link?" confirmation), one-tap copy of verification codes, attachment download (save to a file you pick), pull-to-refresh (Compose BOM raised to 2024.09.00).
+- [ ] **v0.7** Live updates (Mercure/SSE) instead of 10 second polling, with a check every minute as backup, and optional new-mail notifications (menu > Notifications, background service with a small ongoing notification). **<- we are here**
 - [ ] **v0.8** Extras: address expiry reminder, auto-delete of old addresses, maybe a second provider (mail.gw) as an option.
 - [ ] **v1.0** Release: release signing, code shrinking/obfuscation (R8) to make copying harder, final polish, short privacy note.
 
-## v0.6 test checklist
+## v0.7 test checklist
+
+- [ ] GitHub Actions build is green (new library: okhttp-sse; if it fails, send the error log)
+- [ ] APK installs over v0.6, addresses are still there, About says "Version 0.7"
+- [ ] Open the inbox: the empty screen says "Live: new mail appears instantly" after a second or two
+- [ ] With the inbox open, send an email to the address: it shows up in a few seconds without pulling or tapping refresh
+- [ ] Menu > Notifications: Android asks for permission, then the menu says "Notifications: on" and a small ongoing "Driftbox is watching" notification appears
+- [ ] Close the app (swipe it away from recents), send an email: a "New mail" notification appears with sender and subject
+- [ ] Tapping the notification opens Driftbox
+- [ ] With the app open on screen, new mail does NOT also pop a notification
+- [ ] Menu > Notifications again turns it off and the ongoing notification disappears
+- [ ] Second address: mail sent to it while the app is closed also notifies (shows the address in the notification)
+- [ ] Sign out of every address: the ongoing notification goes away by itself
+- [ ] Battery: after a day with notifications on, check Android battery usage for Driftbox and tell me what it says
+
+## v0.6 test checklist (done, no problems reported)
 
 - [ ] GitHub Actions build is green (if the Compose update breaks the build, send the error log)
 - [ ] APK installs over v0.4, existing addresses are still there, About says "Version 0.6"
@@ -65,10 +80,10 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 
 ## Tech
 
-- Kotlin, Jetpack Compose (BOM 2024.09.00), OkHttp, AndroidX security-crypto.
+- Kotlin, Jetpack Compose (BOM 2024.09.00), OkHttp (+ okhttp-sse), AndroidX security-crypto.
 - Built by GitHub Actions (debug APK, no signing keys).
 - Addresses and passwords are stored on the phone only, encrypted (EncryptedSharedPreferences).
-- Files: `MailTm.kt` (API client), `MainActivity.kt` (state and screens), `Extract.kt` (finds links and verification codes in message text), `res/drawable` (icons).
+- Files: `MailTm.kt` (API client), `MainActivity.kt` (state and screens), `Extract.kt` (finds links and verification codes in message text), `Store.kt` (encrypted storage shared by the app and the watcher), `MailWatch.kt` (background watcher service and notifications), `res/drawable` (icons).
 
 ## Mail.tm API notes
 
@@ -76,6 +91,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 - Flow: GET /domains, POST /accounts, POST /token, GET /me, then GET /messages with a Bearer token.
 - Also used: GET /messages/{id} (also lists attachments), GET /messages/{id}/attachment/{attachmentId} (download, needs the Bearer token), PATCH /messages/{id} (mark read), DELETE /messages/{id}, DELETE /accounts/{id}.
 - No sending and no password reset in the API docs we read.
+- Live updates: Mercure server-sent events at https://mercure.mail.tm/.well-known/mercure?topic=/accounts/{id} with the Bearer token. We treat any event as "something changed" and reload the message list, so we do not depend on the event payload.
 - Limit: 8 requests per second per IP.
 - Terms: attribution link to mail.tm must stay visible (it lives in the About screen, reachable from the main menu; keep it reachable); no reselling, no proxying, no illegal use.
 - Docs: https://docs.mail.tm
@@ -96,7 +112,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 
 - Receive only (no compose, no Sent).
 - No password recovery.
-- Polling every 10 seconds, no background notifications.
+- Live connection while the app is open (backup check every minute). Notifications are optional and cost some battery; phones that kill background apps may delay them. After a phone restart, open Driftbox once to restart the watcher (no boot receiver yet).
 - Attachments can be saved but not previewed. Links ask for confirmation first. Verification codes are guessed from text (a number of 4-8 digits with a word like "code" or "verify" just before it), so some can be missed.
 - Addresses can be removed by Mail.tm at any time; mail is not private.
 - If Mail.tm objects to the credit being only in About, move the link back to the main screen.

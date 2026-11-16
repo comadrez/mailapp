@@ -3,6 +3,15 @@ package com.comadrez.mailapp
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -30,6 +39,7 @@ data class Detail(val text: String, val attachments: List<Att>)
 object MailTm {
     private const val BASE = "https://api.mail.tm"
     private val client = OkHttpClient()
+    private val sseClient = client.newBuilder().readTimeout(150, TimeUnit.SECONDS).build()
     private val JSON_TYPE = "application/json".toMediaType()
     private val MERGE_TYPE = "application/merge-patch+json".toMediaType()
     private val rnd = SecureRandom()
@@ -144,6 +154,30 @@ object MailTm {
             src.use { it.copyTo(out) }
         }
     }
+
+    /**
+     * Live connection (Mercure server-sent events). Returns when the connection closes and throws if it fails.
+     * [ping] is called for every event; we only use it as "something changed", then reload the list.
+     */
+    suspend fun listen(token: String, accountId: String, opened: () -> Unit = {}, ping: () -> Unit) =
+        suspendCancellableCoroutine<Unit> { cont ->
+            val req = Request.Builder()
+                .url("https://mercure.mail.tm/.well-known/mercure?topic=/accounts/$accountId")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "text/event-stream")
+                .build()
+            val es = EventSources.createFactory(sseClient).newEventSource(req, object : EventSourceListener() {
+                override fun onOpen(eventSource: EventSource, response: Response) { opened() }
+                override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) { ping() }
+                override fun onClosed(eventSource: EventSource) {
+                    if (cont.isActive) cont.resume(Unit)
+                }
+                override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                    if (cont.isActive) cont.resumeWithException(t ?: IOException("Live connection failed (${response?.code})"))
+                }
+            })
+            cont.invokeOnCancellation { es.cancel() }
+        }
 
     fun markSeen(token: String, id: String) { call("PATCH", "/messages/$id", token = token) }
 

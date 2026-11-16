@@ -1,8 +1,12 @@
 package com.comadrez.mailapp
 
+import android.Manifest
 import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.text.format.DateUtils
@@ -49,7 +53,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,15 +73,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent { MaterialTheme { App() } }
     }
+
+    override fun onStart() {
+        super.onStart()
+        Foreground.visible = true
+        try {
+            if (Store.notify(this) && Store.accounts(this).isNotEmpty()) {
+                startForegroundService(Intent(this, MailWatchService::class.java))
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    override fun onStop() {
+        Foreground.visible = false
+        super.onStop()
+    }
 }
 
 class DriftVM(app: Application) : AndroidViewModel(app) {
-    private val prefs = EncryptedSharedPreferences.create(
-        app, "driftbox_secure",
-        MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = Store.prefs(app)
     private val tokens = ConcurrentHashMap<String, String>()
 
     init { migrateOld(app) }
@@ -93,6 +110,9 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
     var attachments by mutableStateOf(listOf<Att>())
     var refreshing by mutableStateOf(false)
     var savingAtt by mutableStateOf<String?>(null)
+    var liveOk by mutableStateOf(false)
+    var notifyOn by mutableStateOf(Store.notify(app))
+    private var pingJob: Job? = null
     private var loadingDomains = false
 
     val current: Acct? get() = accounts.firstOrNull { it.id == currentId } ?: accounts.firstOrNull()
@@ -244,6 +264,62 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
                 val m = authed(a) { MailTm.messages(it) }
                 if (current?.id == a.id) messages = m
             }
+        }
+    }
+
+    /** Turns background notifications on or off (starts or stops the watcher service). */
+    fun setNotify(ctx: Context, on: Boolean) {
+        notifyOn = on
+        Store.setNotify(ctx, on)
+        val i = Intent(ctx, MailWatchService::class.java)
+        try {
+            if (on) ctx.startForegroundService(i) else ctx.stopService(i)
+        } catch (e: Exception) {
+            error = e.message
+        }
+    }
+
+    private fun ping() {
+        viewModelScope.launch {
+            pingJob?.cancel()
+            pingJob = launch {
+                delay(400)
+                refresh(silent = true)
+            }
+        }
+    }
+
+    /** Live updates while the inbox is open: instant when connected, plus a slow check every minute as a fallback. */
+    suspend fun watchLive(a: Acct) {
+        try {
+            coroutineScope {
+                launch {
+                    while (true) {
+                        delay(60_000)
+                        refresh(silent = true)
+                    }
+                }
+                var wait = 3_000L
+                while (true) {
+                    try {
+                        val t = authed(a) { it }
+                        MailTm.listen(t, a.id, opened = {
+                            wait = 3_000L
+                            viewModelScope.launch { liveOk = true }
+                        }) { ping() }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        tokens.remove(a.id)
+                    }
+                    liveOk = false
+                    delay(wait)
+                    wait = minOf(wait * 2, 30_000L)
+                    refresh(silent = true)
+                }
+            }
+        } finally {
+            liveOk = false
         }
     }
 
@@ -483,10 +559,11 @@ fun HomeScreen(vm: DriftVM) {
 
     LaunchedEffect(a.id) {
         vm.refresh()
-        while (true) {
-            delay(10_000)
-            vm.refresh(silent = true)
-        }
+        vm.watchLive(a)
+    }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.setNotify(ctx, true)
+        else Toast.makeText(ctx, "Notifications are blocked. Allow them for Driftbox in Android settings.", Toast.LENGTH_LONG).show()
     }
 
     Scaffold(
@@ -539,6 +616,17 @@ fun HomeScreen(vm: DriftVM) {
                                 menu = false
                                 vm.go("login")
                             })
+                            DropdownMenuItem(
+                                text = { Text(if (vm.notifyOn) "Notifications: on" else "Notifications: off") },
+                                onClick = {
+                                    menu = false
+                                    if (vm.notifyOn) vm.setNotify(ctx, false)
+                                    else if (Build.VERSION.SDK_INT >= 33 &&
+                                        ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                    ) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    else vm.setNotify(ctx, true)
+                                }
+                            )
                             DropdownMenuItem(text = { Text("About and limits") }, onClick = {
                                 menu = false
                                 vm.go("about")
@@ -590,7 +678,10 @@ fun HomeScreen(vm: DriftVM) {
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(if (vm.onlyUnread) "No unread messages" else "Waiting for emails...")
-                            Text("Checking every 10 seconds", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                if (vm.liveOk) "Live: new mail appears instantly" else "Connecting... checking every minute",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
@@ -836,7 +927,8 @@ fun AboutScreen(vm: DriftVM) {
         "Addresses and emails can be removed by the provider at any time. Do not use Driftbox for accounts you cannot afford to lose.",
         "Not private. Mail is stored on Mail.tm's servers, so never use it for sensitive information.",
         "Anyone who knows the address and password can read that mailbox.",
-        "Mail is checked every 10 seconds while the app is open. There are no notifications when the app is closed.",
+        "New mail appears instantly while the app is open (live connection, with a check every minute as backup).",
+        "Notifications are optional (menu > Notifications). Turning them on keeps a small ongoing notification and a background connection, which uses some battery. Some phones stop background apps, so notifications can be late or missing. After a phone restart, open Driftbox once.",
         "Attachments can be saved to your phone but not previewed. Links in emails ask for confirmation before opening. Codes are detected automatically and may occasionally be missed.",
         "Some websites block disposable email domains, so a few sign-ups may be refused.",
         "The domain list comes from Mail.tm and can change. Too many requests in a short time can show a \"wait a few seconds\" error.",
@@ -861,7 +953,7 @@ fun AboutScreen(vm: DriftVM) {
             )
             Spacer(Modifier.height(8.dp))
             Text("Driftbox", style = MaterialTheme.typography.titleLarge)
-            Text("Version 0.6", style = MaterialTheme.typography.bodySmall)
+            Text("Version 0.7", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Driftbox gives you free disposable email addresses. The mailboxes are provided by the free Mail.tm API. " +
