@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,6 +125,11 @@ fun LoginScreen(vm: MailVM) {
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+        Icon(
+            painterResource(R.drawable.ic_mail), contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Text("mail.com", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
@@ -157,13 +163,21 @@ fun InboxScreen(vm: MailVM) {
             TopAppBar(
                 title = { Text("Inbox") },
                 actions = {
-                    TextButton(onClick = { vm.refresh() }) { Text("Refresh") }
-                    TextButton(onClick = { vm.logout() }) { Text("Sign out") }
+                    IconButton(onClick = { vm.refresh() }) {
+                        Icon(painterResource(R.drawable.ic_refresh), contentDescription = "Refresh")
+                    }
+                    IconButton(onClick = { vm.logout() }) {
+                        Icon(painterResource(R.drawable.ic_logout), contentDescription = "Sign out")
+                    }
                 }
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { vm.screen = "compose" }) { Text("Compose") }
+            ExtendedFloatingActionButton(
+                onClick = { vm.screen = "compose" },
+                icon = { Icon(painterResource(R.drawable.ic_pencil), contentDescription = null) },
+                text = { Text("Compose") }
+            )
         }
     ) { pad ->
         Column(Modifier.padding(pad)) {
@@ -177,6 +191,19 @@ fun InboxScreen(vm: MailVM) {
             if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             vm.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
+            }
+            if (list.isEmpty() && !vm.loading) {
+                Column(
+                    Modifier.fillMaxWidth().padding(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_inbox), null, Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(if (vm.onlyUnread) "No unread messages" else "Inbox is empty")
+                }
             }
             LazyColumn {
                 items(list, key = { it.uid }) { h ->
@@ -222,7 +249,11 @@ fun ReadScreen(vm: MailVM) {
         topBar = {
             TopAppBar(
                 title = { Text("Message") },
-                navigationIcon = { TextButton(onClick = { vm.back() }) { Text("Back") } }
+                navigationIcon = {
+                    IconButton(onClick = { vm.back() }) {
+                        Icon(painterResource(R.drawable.ic_arrow_left), contentDescription = "Back")
+                    }
+                }
             )
         }
     ) { pad ->
@@ -251,12 +282,16 @@ fun ComposeScreen(vm: MailVM) {
         topBar = {
             TopAppBar(
                 title = { Text("New message") },
-                navigationIcon = { TextButton(onClick = { vm.back() }) { Text("Cancel") } },
+                navigationIcon = {
+                    IconButton(onClick = { vm.back() }) {
+                        Icon(painterResource(R.drawable.ic_arrow_left), contentDescription = "Back")
+                    }
+                },
                 actions = {
-                    TextButton(
+                    IconButton(
                         onClick = { vm.send(to, subj, text) },
                         enabled = !vm.loading && to.isNotBlank()
-                    ) { Text(if (vm.loading) "Sending..." else "Send") }
+                    ) { Icon(painterResource(R.drawable.ic_send), contentDescription = "Send") }
                 }
             )
         }
