@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 object Notifs {
     private const val CH_WATCH = "watch"
     private const val CH_MAIL = "mail"
+    private const val CH_REMIND = "reminder"
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -36,6 +37,9 @@ object Notifs {
         )
         nm.createNotificationChannel(
             NotificationChannel(CH_MAIL, "New mail", NotificationManager.IMPORTANCE_HIGH)
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CH_REMIND, "Address reminders", NotificationManager.IMPORTANCE_DEFAULT)
         )
     }
 
@@ -52,6 +56,21 @@ object Notifs {
         .setContentIntent(openApp(ctx))
         .setOngoing(true)
         .build()
+
+    fun remind(ctx: Context, a: Acct, days: Int) {
+        channels(ctx)
+        val n = Notification.Builder(ctx, CH_REMIND)
+            .setSmallIcon(R.drawable.ic_mail)
+            .setContentTitle("This address is $days days old")
+            .setContentText(a.address)
+            .setContentIntent(openApp(ctx))
+            .setAutoCancel(true)
+            .build()
+        try {
+            ctx.getSystemService(NotificationManager::class.java).notify(("remind:" + a.id).hashCode(), n)
+        } catch (_: SecurityException) {
+        }
+    }
 
     fun mail(ctx: Context, a: Acct, m: Msg) {
         channels(ctx)
@@ -111,12 +130,26 @@ class MailWatchService : Service() {
                 stopSelf()
                 return
             }
+            remind(accts)
             val ids = accts.map { it.id }.toSet()
             watchers.keys.filter { it !in ids }.forEach { watchers.remove(it)?.cancel() }
             accts.forEach { a ->
                 if (watchers[a.id]?.isActive != true) watchers[a.id] = scope.launch { watch(a) }
             }
             delay(20_000)
+        }
+    }
+
+    /** Sends one notification per address when it reaches the reminder age (only while the app is not on screen). */
+    private fun remind(accts: List<Acct>) {
+        val d = Store.remindDays(this)
+        if (d <= 0 || Foreground.visible) return
+        val now = System.currentTimeMillis()
+        for (a in accts) {
+            if (a.created <= 0L || now - a.created < d * DAY_MS) continue
+            if (Store.reminded(this, a.id) == d) continue
+            Notifs.remind(this, a, ((now - a.created) / DAY_MS).toInt())
+            Store.setReminded(this, a.id, d)
         }
     }
 

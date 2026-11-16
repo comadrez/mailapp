@@ -20,7 +20,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-data class Acct(val id: String, val address: String, val password: String)
+data class Acct(val id: String, val address: String, val password: String, val created: Long = 0L)
 
 data class Msg(
     val id: String,
@@ -99,10 +99,13 @@ object MailTm {
         return JSONObject(call("POST", "/token", b)).getString("token")
     }
 
-    fun me(token: String): Pair<String, String> {
+    /** Returns (id, address, creation time in ms; 0 if unknown). */
+    fun me(token: String): Triple<String, String, Long> {
         val o = JSONObject(call("GET", "/me", token = token))
-        return o.getString("id") to o.getString("address")
+        return Triple(o.getString("id"), o.getString("address"), parseDate(o.optString("createdAt")))
     }
+
+    fun created(token: String): Long = me(token).third
 
     fun messages(token: String): List<Msg> {
         val arr = members(call("GET", "/messages", token = token))

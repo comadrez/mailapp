@@ -97,7 +97,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
 
     init { migrateOld(app) }
 
-    var accounts by mutableStateOf(loadAccounts())
+    var accounts by mutableStateOf(Store.accounts(app))
     var currentId by mutableStateOf(prefs.getString("current", "") ?: "")
     var screen by mutableStateOf(if (accounts.isEmpty()) "login" else "home")
     var messages by mutableStateOf(listOf<Msg>())
@@ -111,6 +111,9 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
     var refreshing by mutableStateOf(false)
     var savingAtt by mutableStateOf<String?>(null)
     var liveOk by mutableStateOf(false)
+    var remindDays by mutableStateOf(Store.remindDays(app))
+    var autoDeleteDays by mutableStateOf(Store.autoDeleteDays(app))
+    private var maintaining = false
     var notifyOn by mutableStateOf(Store.notify(app))
     private var pingJob: Job? = null
     private var loadingDomains = false
@@ -126,20 +129,13 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
         old.edit().clear().apply()
     }
 
-    private fun loadAccounts(): List<Acct> = try {
-        val arr = JSONArray(prefs.getString("list", "[]"))
-        (0 until arr.length()).map {
-            val o = arr.getJSONObject(it)
-            Acct(o.getString("id"), o.getString("address"), o.getString("password"))
-        }
-    } catch (e: Exception) {
-        emptyList()
-    }
-
     private fun save() {
         val arr = JSONArray()
         accounts.forEach {
-            arr.put(JSONObject().put("id", it.id).put("address", it.address).put("password", it.password))
+            arr.put(
+                JSONObject().put("id", it.id).put("address", it.address)
+                    .put("password", it.password).put("created", it.created)
+            )
         }
         prefs.edit().putString("list", arr.toString()).putString("current", currentId).apply()
     }
@@ -189,7 +185,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
     fun login(address: String, password: String) = task {
         val addr = address.trim().lowercase()
         if (addr.isBlank() || password.isBlank()) throw IllegalStateException("Enter your address and password")
-        val (id, realAddr) = withContext(Dispatchers.IO) {
+        val (id, realAddr, created) = withContext(Dispatchers.IO) {
             val t = try {
                 MailTm.token(addr, password)
             } catch (e: MailTm.ApiError) {
@@ -199,7 +195,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
             tokens[me.first] = t
             me
         }
-        accounts = accounts.filter { it.id != id } + Acct(id, realAddr, password)
+        accounts = accounts.filter { it.id != id } + Acct(id, realAddr, password, created)
         currentId = id
         messages = emptyList()
         screen = "home"
@@ -212,7 +208,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
         if (password.length < 6) throw IllegalStateException("Password must be at least 6 characters")
         val address = "$user@$domain"
         val id = withContext(Dispatchers.IO) { MailTm.createAccount(address, password) }
-        accounts = accounts + Acct(id, address, password)
+        accounts = accounts + Acct(id, address, password, System.currentTimeMillis())
         currentId = id
         messages = emptyList()
         screen = "home"
@@ -279,6 +275,57 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setRemind(d: Int) {
+        remindDays = d
+        Store.setRemindDays(getApplication<Application>(), d)
+    }
+
+    fun setAutoDelete(d: Int) {
+        autoDeleteDays = d
+        Store.setAutoDeleteDays(getApplication<Application>(), d)
+        maintain()
+    }
+
+    fun bannerSeen(a: Acct): Boolean = Store.bannerSeen(getApplication<Application>(), a.id) == remindDays
+
+    fun dismissBanner(a: Acct) = Store.setBannerSeen(getApplication<Application>(), a.id, remindDays)
+
+    /** Fills in missing creation dates of older saved addresses, then deletes addresses past the auto-delete age. */
+    fun maintain() {
+        if (maintaining) return
+        maintaining = true
+        viewModelScope.launch {
+            try {
+                for (a in accounts.filter { it.created == 0L }) {
+                    try {
+                        val c = authed(a) { MailTm.created(it) }
+                        if (c > 0L) {
+                            accounts = accounts.map { if (it.id == a.id) it.copy(created = c) else it }
+                            save()
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                val days = autoDeleteDays
+                if (days > 0) {
+                    val limit = System.currentTimeMillis() - days * DAY_MS
+                    for (a in accounts.filter { it.created in 1L until limit }) {
+                        try {
+                            authed(a) { MailTm.deleteAccount(it, a.id) }
+                            removeLocal(a)
+                            Toast.makeText(getApplication<Application>(), "Deleted old address ${a.address}", Toast.LENGTH_LONG).show()
+                        } catch (e: MailTm.ApiError) {
+                            if (e.code == 401 || e.code == 404) removeLocal(a)
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            } finally {
+                maintaining = false
+            }
+        }
+    }
+
     private fun ping() {
         viewModelScope.launch {
             pingJob?.cancel()
@@ -297,6 +344,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
                     while (true) {
                         delay(60_000)
                         refresh(silent = true)
+                        maintain()
                     }
                 }
                 var wait = 3_000L
@@ -412,6 +460,7 @@ fun App(vm: DriftVM = viewModel()) {
         "register" -> { BackHandler { vm.go("login") }; RegisterScreen(vm) }
         "read" -> { BackHandler { vm.back() }; ReadScreen(vm) }
         "about" -> { BackHandler { vm.back() }; AboutScreen(vm) }
+        "settings" -> { BackHandler { vm.back() }; SettingsScreen(vm) }
         else -> HomeScreen(vm)
     }
 }
@@ -556,14 +605,12 @@ fun HomeScreen(vm: DriftVM) {
     var switcher by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
     val list = if (vm.onlyUnread) vm.messages.filter { !it.seen } else vm.messages
+    var bannerHidden by remember(a.id, vm.remindDays) { mutableStateOf(vm.bannerSeen(a)) }
 
     LaunchedEffect(a.id) {
         vm.refresh()
+        vm.maintain()
         vm.watchLive(a)
-    }
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) vm.setNotify(ctx, true)
-        else Toast.makeText(ctx, "Notifications are blocked. Allow them for Driftbox in Android settings.", Toast.LENGTH_LONG).show()
     }
 
     Scaffold(
@@ -616,17 +663,10 @@ fun HomeScreen(vm: DriftVM) {
                                 menu = false
                                 vm.go("login")
                             })
-                            DropdownMenuItem(
-                                text = { Text(if (vm.notifyOn) "Notifications: on" else "Notifications: off") },
-                                onClick = {
-                                    menu = false
-                                    if (vm.notifyOn) vm.setNotify(ctx, false)
-                                    else if (Build.VERSION.SDK_INT >= 33 &&
-                                        ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                                    ) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    else vm.setNotify(ctx, true)
-                                }
-                            )
+                            DropdownMenuItem(text = { Text("Settings") }, onClick = {
+                                menu = false
+                                vm.go("settings")
+                            })
                             DropdownMenuItem(text = { Text("About and limits") }, onClick = {
                                 menu = false
                                 vm.go("about")
@@ -657,6 +697,23 @@ fun HomeScreen(vm: DriftVM) {
                 )
             }
             if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            val ageDays = if (a.created > 0L) ((System.currentTimeMillis() - a.created) / DAY_MS).toInt() else 0
+            if (vm.remindDays > 0 && a.created > 0L && ageDays >= vm.remindDays && !bannerHidden) {
+                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Row(
+                        Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "This address is $ageDays days old. Mail.tm can remove addresses at any time." +
+                                if (vm.autoDeleteDays > 0) " It is deleted automatically after ${vm.autoDeleteDays} days." else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { bannerHidden = true; vm.dismissBanner(a) }) { Text("Dismiss") }
+                    }
+                }
+            }
             vm.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
             }
@@ -920,6 +977,109 @@ fun ReadScreen(vm: DriftVM) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun SettingsScreen(vm: DriftVM) {
+    val ctx = LocalContext.current
+    val options = listOf(0 to "Off", 1 to "1 day", 3 to "3 days", 7 to "7 days", 30 to "30 days")
+    fun label(d: Int) = options.firstOrNull { it.first == d }?.second ?: "Off"
+    var remindMenu by remember { mutableStateOf(false) }
+    var delMenu by remember { mutableStateOf(false) }
+    var confirmDel by remember { mutableStateOf<Int?>(null) }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) vm.setNotify(ctx, true)
+        else Toast.makeText(ctx, "Notifications are blocked. Allow them for Driftbox in Android settings.", Toast.LENGTH_LONG).show()
+    }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { vm.back() }) {
+                        Icon(painterResource(R.drawable.ic_arrow_left), contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Notifications", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Get notified about new mail while the app is closed. Keeps a small ongoing notification and uses some battery.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = vm.notifyOn,
+                    onCheckedChange = { on ->
+                        if (!on) vm.setNotify(ctx, false)
+                        else if (Build.VERSION.SDK_INT >= 33 &&
+                            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        else vm.setNotify(ctx, true)
+                    }
+                )
+            }
+            Spacer(Modifier.height(28.dp))
+            Text("Address age reminder", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Shows a notice on the inbox when an address reaches this age (plus a notification if notifications are on). Mail.tm can remove addresses at any time, so use it as a nudge to move anything important.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(8.dp))
+            Box {
+                OutlinedButton(onClick = { remindMenu = true }) { Text(label(vm.remindDays)) }
+                DropdownMenu(expanded = remindMenu, onDismissRequest = { remindMenu = false }) {
+                    options.forEach { (d, l) ->
+                        DropdownMenuItem(text = { Text(l) }, onClick = { remindMenu = false; vm.setRemind(d) })
+                    }
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            Text("Auto-delete old addresses", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Deletes an address and all its emails permanently once it is this old. It only runs while Driftbox is open, and it can't be undone.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(8.dp))
+            Box {
+                OutlinedButton(onClick = { delMenu = true }) { Text(label(vm.autoDeleteDays)) }
+                DropdownMenu(expanded = delMenu, onDismissRequest = { delMenu = false }) {
+                    options.forEach { (d, l) ->
+                        DropdownMenuItem(text = { Text(l) }, onClick = {
+                            delMenu = false
+                            if (d == 0) vm.setAutoDelete(0) else confirmDel = d
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    confirmDel?.let { d ->
+        val limit = System.currentTimeMillis() - d * DAY_MS
+        val already = vm.accounts.count { it.created in 1L until limit }
+        AlertDialog(
+            onDismissRequest = { confirmDel = null },
+            title = { Text("Turn on auto-delete?") },
+            text = {
+                Text(
+                    "Addresses older than $d days and all of their emails will be deleted permanently. This can't be undone." +
+                        if (already > 0) " $already of your ${vm.accounts.size} addresses are already older than that and will be deleted right away."
+                        else ""
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.setAutoDelete(d); confirmDel = null }) { Text("Turn on") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("Cancel") } }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun AboutScreen(vm: DriftVM) {
     val limits = listOf(
         "Receive only. Driftbox cannot send email: there is no Compose button and no Sent folder.",
@@ -928,8 +1088,9 @@ fun AboutScreen(vm: DriftVM) {
         "Not private. Mail is stored on Mail.tm's servers, so never use it for sensitive information.",
         "Anyone who knows the address and password can read that mailbox.",
         "New mail appears instantly while the app is open (live connection, with a check every minute as backup).",
-        "Notifications are optional (menu > Notifications). Turning them on keeps a small ongoing notification and a background connection, which uses some battery. Some phones stop background apps, so notifications can be late or missing. After a phone restart, open Driftbox once.",
+        "Notifications are optional (menu > Settings). Turning them on keeps a small ongoing notification and a background connection, which uses some battery. Some phones stop background apps, so notifications can be late or missing. After a phone restart, open Driftbox once.",
         "Attachments can be saved to your phone but not previewed. Links in emails ask for confirmation before opening. Codes are detected automatically and may occasionally be missed.",
+        "Address age reminders and auto-delete are optional (menu > Settings). Auto-delete is permanent and only runs while Driftbox is open.",
         "Some websites block disposable email domains, so a few sign-ups may be refused.",
         "The domain list comes from Mail.tm and can change. Too many requests in a short time can show a \"wait a few seconds\" error.",
         "Your addresses and passwords are saved encrypted on this phone only."
@@ -953,7 +1114,7 @@ fun AboutScreen(vm: DriftVM) {
             )
             Spacer(Modifier.height(8.dp))
             Text("Driftbox", style = MaterialTheme.typography.titleLarge)
-            Text("Version 0.7", style = MaterialTheme.typography.bodySmall)
+            Text("Version 0.8", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Driftbox gives you free disposable email addresses. The mailboxes are provided by the free Mail.tm API. " +
