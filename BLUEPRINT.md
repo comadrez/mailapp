@@ -1,14 +1,14 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 10 (Nov 17, 2026)
+Blueprint version: 11 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
 ## Where we are
 
-**>>> v1.0 Driftbox: written, waiting for signing setup, first release build and phone test <<<**
+**>>> v1.0 Driftbox: written, waiting for signing setup and the first release build <<<**
 
-Next action: (1) push v1.0 and check the normal debug build is green, (2) do the one-time Release signing setup below, (3) run the Release workflow and install the signed APK, (4) run the v1.0 test checklist. Optional after that: v0.9 (mail.gw).
+Next action: (1) push v1.0 and check the normal debug build is green, (2) do the one-time Release signing setup below, (3) run the Release workflow and install the signed APK. Tell Claude about anything that goes wrong (build log or what you saw). Optional after that: v0.9 (mail.gw).
 
 ## Milestones
 
@@ -52,74 +52,6 @@ cat ~/driftbox.jks.b64
 6. The first signed install: the release app has the same id as the old debug-signed app (v0.4 to v0.8) but a different signature, so **uninstall the old Driftbox first**. Saved addresses are lost with it (Android backup is off), but you can sign in again with each address and password.
 
 Debug builds (every push) now install as a separate app called "Driftbox (debug)", so they no longer replace the release app. They have their own saved addresses.
-
-## v1.0 test checklist
-
-- [ ] Normal debug build (push) is green and installs as "Driftbox (debug)" next to the old app
-- [ ] Release workflow is green (if R8 reports missing classes or the build fails, send the error log)
-- [ ] Signed release APK installs after uninstalling the old app and opens as "Driftbox"
-- [ ] Release app: register or sign in, receive mail, open a message, swipe delete (shrinking can break things that only show in release, so test every screen)
-- [ ] Release app: Settings > Notifications works, a "New mail" notification appears with the app closed
-- [ ] Lock screen set to hide sensitive content: the notification shows only "New mail" and the address
-- [ ] About shows "Version 1.0", a Privacy section and the Mail.tm link
-- [ ] Release app crashes? Send me what you did and any error text (release logs keep file and line numbers)
-
-## v0.8 test checklist (done, no problems reported)
-
-- [ ] GitHub Actions build is green
-- [ ] APK installs over v0.7, addresses are still there, About says "Version 0.8"
-- [ ] Menu now has "Settings" instead of "Notifications"; the Notifications switch inside Settings works as before (permission, ongoing notification on/off)
-- [ ] Reminder: set it to "1 day" (an address older than a day shows a banner "This address is N days old" with Dismiss); Dismiss hides it and it does not come back for that address
-- [ ] Reminder with notifications on and the app closed: one "This address is N days old" notification per address (not repeated)
-- [ ] Reminder "Off" shows no banner
-- [ ] Auto-delete: choosing a day count shows a confirmation that says how many of your addresses are already older; Cancel changes nothing
-- [ ] Auto-delete with a brand new throwaway address only (do this test with an address you don't need): after it passes the chosen age it disappears by itself while the app is open, with a "Deleted old address" message
-- [ ] Setting auto-delete back to "Off" asks nothing and stops deleting
-- [ ] Old addresses from v0.4 to v0.7 get their age filled in automatically after opening the inbox (the reminder banner can then appear for them)
-
-## v0.7 test checklist (done, no problems reported)
-
-- [ ] GitHub Actions build is green (new library: okhttp-sse; if it fails, send the error log)
-- [ ] APK installs over v0.6, addresses are still there, About says "Version 0.7"
-- [ ] Open the inbox: the empty screen says "Live: new mail appears instantly" after a second or two
-- [ ] With the inbox open, send an email to the address: it shows up in a few seconds without pulling or tapping refresh
-- [ ] Menu > Notifications: Android asks for permission, then the menu says "Notifications: on" and a small ongoing "Driftbox is watching" notification appears
-- [ ] Close the app (swipe it away from recents), send an email: a "New mail" notification appears with sender and subject
-- [ ] Tapping the notification opens Driftbox
-- [ ] With the app open on screen, new mail does NOT also pop a notification
-- [ ] Menu > Notifications again turns it off and the ongoing notification disappears
-- [ ] Second address: mail sent to it while the app is closed also notifies (shows the address in the notification)
-- [ ] Sign out of every address: the ongoing notification goes away by itself
-- [ ] Battery: after a day with notifications on, check Android battery usage for Driftbox and tell me what it says
-
-## v0.6 test checklist (done, no problems reported)
-
-- [ ] GitHub Actions build is green (if the Compose update breaks the build, send the error log)
-- [ ] APK installs over v0.4, existing addresses are still there, About says "Version 0.6"
-- [ ] Pull down on the inbox list refreshes it (also works on the empty "Waiting for emails" screen)
-- [ ] Send yourself an email containing a link: it shows underlined in the message, tapping asks "Open this link?", Open goes to the browser, Cancel does nothing
-- [ ] Send an email with text like "Your verification code is 482913": a "Copy 482913" button shows above the body, tapping it copies the code (paste it somewhere to check)
-- [ ] Email without a code shows no code button (no false alarms on normal mails)
-- [ ] Email with an attachment: it appears under "Attachments" with its size, Save opens the file picker, the saved file opens fine
-- [ ] Swipe delete, Unread filter, switcher, sign out and delete address still work (nothing from v0.4 broke)
-
-## v0.4 test checklist (done Nov 17, all passed)
-
-- [x] GitHub Actions build is green
-- [x] APK installs over the old app and opens as "Driftbox"
-- [x] First launch shows the login screen with a small Register link at the bottom
-- [x] Register: domain list loads, "Generate" fills username and password, "Create address" works
-- [x] Inbox opens after registering, address shown under "Inbox"
-- [x] Menu > Copy address copies it
-- [x] An email sent to the address shows up within about 10 seconds
-- [x] Opening it shows the text and makes it normal (not bold)
-- [x] Swipe a message left or right deletes it
-- [x] Unread filter works
-- [x] Menu > Add address, register or sign in a second address: the switcher icon appears at the top right
-- [x] Switching between addresses works
-- [x] Sign out, then sign in again with address and password
-- [x] Menu > Delete this address works
-- [x] Menu > About and limits shows the limits, and "Powered by mail.tm" opens mail.tm
 
 ## How to push an update (Termux)
 
