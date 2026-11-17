@@ -1,6 +1,6 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 11 (Nov 17, 2026)
+Blueprint version: 12 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
@@ -18,7 +18,7 @@ Next action: (1) push v1.0 and check the normal debug build is green, (2) do the
 - [x] **v0.4** Driftbox: renamed, login-first screen with a small Register link, Register screen (username, domain picker, password, random generator), account switcher at the top right when there are several addresses, encrypted storage, swipe to delete, filter chips, menu, About screen with all limits and the Mail.tm credit.
 - [x] **v0.5** Fix pass from the first real test. Skipped: v0.4 built green and passed the whole checklist on the phone (Nov 17). New bugs found later go into the next version.
 - [x] **v0.6** Quality of life: tappable links (with an "Open this link?" confirmation), one-tap copy of verification codes, attachment download (save to a file you pick), pull-to-refresh (Compose BOM raised to 2024.09.00).
-- [x] **v0.7** Live updates (Mercure/SSE) instead of 10 second polling, with a check every minute as backup, and optional new-mail notifications (menu > Notifications, background service with a small ongoing notification).
+- [x] **v0.7** Live updates (Mercure/SSE) instead of 10 second polling, and new-mail notifications. Reworked in v1.0: notifications are on by default like a normal email app, no "checking every minute" text, silent minimal "Driftbox" background notification (Android requires one for a live connection, Mail.tm has no push service), the watcher restarts after a phone reboot.
 - [x] **v0.8** Extras: new Settings screen (menu > Settings) with the Notifications switch, an address age reminder (Off / 1 / 3 / 7 / 30 days: banner on the inbox plus a notification if notifications are on) and auto-delete of old addresses (same choices, with a confirmation, runs only while the app is open).
 - [ ] **v0.9 (optional)** Second provider mail.gw: same API at api.mail.gw and mercure.mail.gw, needs a provider field on every saved address.
 - [ ] **v1.0** Release: signed release APK built by a separate Release workflow (tag `v*` or manual run), code shrinking/obfuscation (R8), debug builds now install side by side as "Driftbox (debug)", privacy note in About and PRIVACY.md, notifications hide content on the lock screen. **<- we are here**
@@ -103,7 +103,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 - Receive only (no compose, no Sent).
 - Auto-delete is permanent and only runs while the app is open (not in the background). Address age comes from Mail.tm's creation date.
 - No password recovery.
-- Live connection while the app is open (backup check every minute). Notifications are optional and cost some battery; phones that kill background apps may delay them. After a phone restart, open Driftbox once to restart the watcher (no boot receiver yet).
+- New mail arrives through a live connection to Mail.tm and notifies instantly, even with the app closed. Android requires a silent notification for that connection, and it uses some battery. Phones that kill background apps may delay notifications.
 - Attachments can be saved but not previewed. Links ask for confirmation first. Verification codes are guessed from text (a number of 4-8 digits with a word like "code" or "verify" just before it), so some can be missed.
 - Addresses can be removed by Mail.tm at any time; mail is not private.
 - If Mail.tm objects to the credit being only in About, move the link back to the main screen.

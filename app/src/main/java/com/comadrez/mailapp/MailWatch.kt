@@ -24,15 +24,17 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 object Notifs {
-    private const val CH_WATCH = "watch"
+    private const val CH_WATCH = "watch_quiet"
     private const val CH_MAIL = "mail"
     private const val CH_REMIND = "reminder"
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.deleteNotificationChannel("watch")
         nm.createNotificationChannel(
-            NotificationChannel(CH_WATCH, "Background watching", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Small ongoing notification while Driftbox watches for new mail"
+            NotificationChannel(CH_WATCH, "Background connection", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Required by Android so Driftbox can receive new mail instantly. Silent. You can hide it without stopping new mail notifications."
+                setShowBadge(false)
             }
         )
         nm.createNotificationChannel(
@@ -51,9 +53,9 @@ object Notifs {
 
     fun ongoing(ctx: Context): Notification = Notification.Builder(ctx, CH_WATCH)
         .setSmallIcon(R.drawable.ic_mail)
-        .setContentTitle("Driftbox is watching for new mail")
-        .setContentText("Turn this off in the Driftbox menu > Notifications")
+        .setContentTitle("Driftbox")
         .setContentIntent(openApp(ctx))
+        .setVisibility(Notification.VISIBILITY_SECRET)
         .setOngoing(true)
         .build()
 
@@ -199,5 +201,17 @@ class MailWatchService : Service() {
             msgs.filter { !it.seen && it.id !in known }.forEach { Notifs.mail(this, a, it) }
         }
         Store.setNotified(this, a.id, msgs.map { it.id }.toSet())
+    }
+}
+
+/** Starts the watcher again after the phone restarts or the app is updated. */
+class BootReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(ctx: Context, intent: Intent) {
+        try {
+            if (Store.notify(ctx) && Store.accounts(ctx).isNotEmpty()) {
+                ctx.startForegroundService(Intent(ctx, MailWatchService::class.java))
+            }
+        } catch (_: Exception) {
+        }
     }
 }

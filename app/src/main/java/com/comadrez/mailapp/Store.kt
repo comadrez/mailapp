@@ -39,11 +39,14 @@ object Store {
         emptyList()
     }
 
-    fun notify(ctx: Context): Boolean = prefs(ctx).getBoolean("notify", false)
+    fun notify(ctx: Context): Boolean = prefs(ctx).getBoolean("notify", true)
 
     fun setNotify(ctx: Context, on: Boolean) {
         prefs(ctx).edit().putBoolean("notify", on).apply()
     }
+
+    fun askedNotif(ctx: Context): Boolean = prefs(ctx).getBoolean("asked_notif", false)
+    fun setAskedNotif(ctx: Context) { prefs(ctx).edit().putBoolean("asked_notif", true).apply() }
 
     /** Days after which an address gets an age reminder (0 = off). */
     fun remindDays(ctx: Context): Int = prefs(ctx).getInt("remind_days", 0)

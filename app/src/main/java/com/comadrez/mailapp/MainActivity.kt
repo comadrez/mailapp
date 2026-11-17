@@ -336,17 +336,10 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Live updates while the inbox is open: instant when connected, plus a slow check every minute as a fallback. */
+    /** Live updates while the inbox is open. If the connection drops it reconnects and catches up. */
     suspend fun watchLive(a: Acct) {
         try {
             coroutineScope {
-                launch {
-                    while (true) {
-                        delay(60_000)
-                        refresh(silent = true)
-                        maintain()
-                    }
-                }
                 var wait = 3_000L
                 while (true) {
                     try {
@@ -364,6 +357,7 @@ class DriftVM(app: Application) : AndroidViewModel(app) {
                     delay(wait)
                     wait = minOf(wait * 2, 30_000L)
                     refresh(silent = true)
+                    maintain()
                 }
             }
         } finally {
@@ -612,6 +606,17 @@ fun HomeScreen(vm: DriftVM) {
         vm.maintain()
         vm.watchLive(a)
     }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (!ok) vm.setNotify(ctx, false)
+    }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 && vm.notifyOn && !Store.askedNotif(ctx) &&
+            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Store.setAskedNotif(ctx)
+            permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -734,11 +739,7 @@ fun HomeScreen(vm: DriftVM) {
                                 tint = MaterialTheme.colorScheme.outline
                             )
                             Spacer(Modifier.height(8.dp))
-                            Text(if (vm.onlyUnread) "No unread messages" else "Waiting for emails...")
-                            Text(
-                                if (vm.liveOk) "Live: new mail appears instantly" else "Connecting... checking every minute",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            Text(if (vm.onlyUnread) "No unread messages" else "No emails yet")
                         }
                     }
                 }
@@ -1005,7 +1006,7 @@ fun SettingsScreen(vm: DriftVM) {
                 Column(Modifier.weight(1f)) {
                     Text("Notifications", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Get notified about new mail while the app is closed. Keeps a small ongoing notification and uses some battery.",
+                        "Instant notification when new mail arrives, even when the app is closed. Android shows a silent \"Driftbox\" notification while this is on, and the live connection uses some battery.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1087,8 +1088,8 @@ fun AboutScreen(vm: DriftVM) {
         "Addresses and emails can be removed by the provider at any time. Do not use Driftbox for accounts you cannot afford to lose.",
         "Not private. Mail is stored on Mail.tm's servers, so never use it for sensitive information.",
         "Anyone who knows the address and password can read that mailbox.",
-        "New mail appears instantly while the app is open (live connection, with a check every minute as backup).",
-        "Notifications are optional (menu > Settings). Turning them on keeps a small ongoing notification and a background connection, which uses some battery. Some phones stop background apps, so notifications can be late or missing. After a phone restart, open Driftbox once.",
+        "New mail appears instantly through a live connection to Mail.tm.",
+        "New mail notifications are on by default (turn them off in menu > Settings). They need a live background connection, so Android shows a silent Driftbox notification and the battery is used a little. Some phones stop background apps, so notifications can be late or missing.",
         "Attachments can be saved to your phone but not previewed. Links in emails ask for confirmation before opening. Codes are detected automatically and may occasionally be missed.",
         "Address age reminders and auto-delete are optional (menu > Settings). Auto-delete is permanent and only runs while Driftbox is open.",
         "Some websites block disposable email domains, so a few sign-ups may be refused.",
