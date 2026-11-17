@@ -1,14 +1,14 @@
 # Driftbox: Project Blueprint
 
-Blueprint version: 12 (Nov 17, 2026)
+Blueprint version: 13 (Nov 17, 2026)
 Repo: https://github.com/comadrez/mailapp
 App id: com.comadrez.mailapp (app name "Driftbox")
 
 ## Where we are
 
-**>>> v1.0 Driftbox: written, waiting for signing setup and the first release build <<<**
+**>>> v1.1 Driftbox: written, waiting for build check and phone test (release signing from v1.0 still needed once) <<<**
 
-Next action: (1) push v1.0 and check the normal debug build is green, (2) do the one-time Release signing setup below, (3) run the Release workflow and install the signed APK. Tell Claude about anything that goes wrong (build log or what you saw). Optional after that: v0.9 (mail.gw).
+Next action: (1) push v1.1 and check the normal debug build is green, (2) do the one-time Release signing setup below, (3) run the Release workflow and install the signed APK. Tell Claude about anything that goes wrong (build log or what you saw). Optional after that: v0.9 (mail.gw).
 
 ## Milestones
 
@@ -21,7 +21,8 @@ Next action: (1) push v1.0 and check the normal debug build is green, (2) do the
 - [x] **v0.7** Live updates (Mercure/SSE) instead of 10 second polling, and new-mail notifications. Reworked in v1.0: notifications are on by default like a normal email app, no "checking every minute" text, silent minimal "Driftbox" background notification (Android requires one for a live connection, Mail.tm has no push service), the watcher restarts after a phone reboot.
 - [x] **v0.8** Extras: new Settings screen (menu > Settings) with the Notifications switch, an address age reminder (Off / 1 / 3 / 7 / 30 days: banner on the inbox plus a notification if notifications are on) and auto-delete of old addresses (same choices, with a confirmation, runs only while the app is open).
 - [ ] **v0.9 (optional)** Second provider mail.gw: same API at api.mail.gw and mercure.mail.gw, needs a provider field on every saved address.
-- [ ] **v1.0** Release: signed release APK built by a separate Release workflow (tag `v*` or manual run), code shrinking/obfuscation (R8), debug builds now install side by side as "Driftbox (debug)", privacy note in About and PRIVACY.md, notifications hide content on the lock screen. **<- we are here**
+- [x] **v1.0** Release: signed release APK built by a separate Release workflow (tag `v*` or manual run), code shrinking/obfuscation (R8), debug builds now install side by side as "Driftbox (debug)", privacy note in About and PRIVACY.md, notifications hide content on the lock screen.
+- [ ] **v1.1** Reliable background running: Settings > "Keep running in background" asks Android to ignore battery optimization for Driftbox (adds REQUEST_IGNORE_BATTERY_OPTIMIZATIONS), shows whether it is on, and links to app settings for phone-brand auto-start lists. The watcher service, boot start and app-open start already existed from v1.0. **<- we are here**
 
 ## Release signing (one time, in Termux)
 

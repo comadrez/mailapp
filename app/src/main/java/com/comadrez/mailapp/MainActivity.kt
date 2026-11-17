@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings as AndroidSettings
 import android.net.Uri
 import android.os.Bundle
 import android.text.format.DateUtils
@@ -985,6 +987,9 @@ fun SettingsScreen(vm: DriftVM) {
     var remindMenu by remember { mutableStateOf(false) }
     var delMenu by remember { mutableStateOf(false) }
     var confirmDel by remember { mutableStateOf<Int?>(null) }
+    fun batteryFree(): Boolean = ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
+    var batteryOk by remember { mutableStateOf(batteryFree()) }
+    val batteryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { batteryOk = batteryFree() }
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.setNotify(ctx, true)
         else Toast.makeText(ctx, "Notifications are blocked. Allow them for Driftbox in Android settings.", Toast.LENGTH_LONG).show()
@@ -1022,6 +1027,42 @@ fun SettingsScreen(vm: DriftVM) {
                     }
                 )
             }
+            Spacer(Modifier.height(28.dp))
+            Text("Keep running in background", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (batteryOk) "Battery optimization is off for Driftbox, so Android should not pause the live connection. Notifications will keep arriving when the screen is off."
+                else "Android may pause Driftbox when the screen is off, which delays or blocks new mail notifications. Allow Driftbox to ignore battery optimization to prevent that.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(8.dp))
+            if (!batteryOk) {
+                Button(onClick = {
+                    try {
+                        batteryLauncher.launch(
+                            Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + ctx.packageName))
+                        )
+                    } catch (e: Exception) {
+                        try {
+                            batteryLauncher.launch(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        } catch (_: Exception) {
+                            Toast.makeText(ctx, "Open Android settings > Apps > Driftbox > Battery and choose Unrestricted.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }) { Text("Allow background running") }
+                Spacer(Modifier.height(8.dp))
+            }
+            OutlinedButton(onClick = {
+                try {
+                    ctx.startActivity(
+                        Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))
+                    )
+                } catch (_: Exception) {
+                }
+            }) { Text("Open app settings (auto-start, battery)") }
+            Text(
+                "Some phone brands (Xiaomi, Oppo, Vivo, Huawei, Samsung) also have their own auto-start or battery list. If notifications still stop, allow auto-start and set battery to Unrestricted there.",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(28.dp))
             Text("Address age reminder", style = MaterialTheme.typography.titleMedium)
             Text(
