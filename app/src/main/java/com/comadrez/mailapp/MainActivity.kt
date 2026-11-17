@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
@@ -73,7 +76,7 @@ import kotlin.math.abs
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { App() } }
+        setContent { DriftTheme { App() } }
     }
 
     override fun onStart() {
@@ -592,15 +595,66 @@ fun RegisterScreen(vm: DriftVM) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+private val GmBg = Color(0xFFE9EFEB)
+private val GmCard = Color(0xFFF4FBF7)
+private val GmRead = Color(0xFFEDF3EF)
+private val GmSel = Color(0xFFCDE8DB)
+private val GmFab = Color(0xFFA8F0D6)
+
+/** Gmail-like green and mint colors for the whole app. */
+@Composable
+fun DriftTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = Color(0xFF006C51),
+            onPrimary = Color.White,
+            primaryContainer = GmFab,
+            onPrimaryContainer = Color(0xFF002117),
+            secondaryContainer = GmSel,
+            onSecondaryContainer = Color(0xFF0B1F18),
+            background = GmBg,
+            surface = GmBg,
+            surfaceContainerLow = GmCard,
+            surfaceContainer = GmCard,
+            surfaceContainerHigh = GmCard,
+            surfaceContainerHighest = Color(0xFFDDE5E0)
+        ),
+        content = content
+    )
+}
+
+@Composable
+private fun DrawerItem(label: String, icon: Int, selected: Boolean = false, badge: String? = null, onClick: () -> Unit) {
+    NavigationDrawerItem(
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        icon = { Icon(painterResource(icon), contentDescription = null, Modifier.size(24.dp)) },
+        badge = { if (badge != null) Text(badge, style = MaterialTheme.typography.labelLarge) },
+        selected = selected,
+        onClick = onClick,
+        colors = NavigationDrawerItemDefaults.colors(selectedContainerColor = GmSel, unselectedContainerColor = Color.Transparent),
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: DriftVM) {
     val a = vm.current ?: return
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var menu by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val drawer = rememberDrawerState(DrawerValue.Closed)
     var switcher by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
-    val list = if (vm.onlyUnread) vm.messages.filter { !it.seen } else vm.messages
+    var searching by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val focus = remember { FocusRequester() }
+    val q = query.trim()
+    val base = if (vm.onlyUnread) vm.messages.filter { !it.seen } else vm.messages
+    val list = if (q.isEmpty()) base else base.filter {
+        it.from.contains(q, true) || it.subject.contains(q, true) || it.intro.contains(q, true)
+    }
+    val unreadCount = vm.messages.count { !it.seen }
     var bannerHidden by remember(a.id, vm.remindDays) { mutableStateOf(vm.bannerSeen(a)) }
 
     LaunchedEffect(a.id) {
@@ -620,23 +674,131 @@ fun HomeScreen(vm: DriftVM) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Inbox", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            a.address, style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+    BackHandler(enabled = searching && !drawer.isOpen) { searching = false; query = "" }
+
+    fun closeDrawer(then: () -> Unit) {
+        scope.launch { drawer.close() }
+        then()
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = drawer.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = GmBg) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Driftbox",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 28.dp, top = 28.dp, bottom = 20.dp)
+                    )
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    DrawerItem("Inbox", R.drawable.ic_inbox, selected = !vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
+                        closeDrawer { vm.onlyUnread = false }
                     }
-                },
-                actions = {
-                    if (vm.accounts.size > 1) {
+                    DrawerItem("Unread", R.drawable.ic_mail, selected = vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
+                        closeDrawer { vm.onlyUnread = true }
+                    }
+                    Text(
+                        "Addresses", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 8.dp)
+                    )
+                    vm.accounts.forEach { acc ->
+                        DrawerItem(acc.address, R.drawable.ic_users, selected = acc.id == a.id) {
+                            closeDrawer { vm.switchTo(acc) }
+                        }
+                    }
+                    DrawerItem("Add address", R.drawable.ic_plus) { closeDrawer { vm.go("login") } }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    DrawerItem("Settings", R.drawable.ic_sliders) { closeDrawer { vm.go("settings") } }
+                    DrawerItem("About and limits", R.drawable.ic_info) { closeDrawer { vm.go("about") } }
+                    DrawerItem("Copy address", R.drawable.ic_copy) {
+                        closeDrawer {
+                            clipboard.setText(AnnotatedString(a.address))
+                            Toast.makeText(ctx, "Address copied", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    DrawerItem("Delete this address", R.drawable.ic_trash) { closeDrawer { dialog = "delete" } }
+                    DrawerItem("Sign out", R.drawable.ic_log_out) { closeDrawer { dialog = "signout" } }
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+        }
+    ) {
+        Scaffold(
+            containerColor = GmBg,
+            floatingActionButton = {
+                ExtendedFloatingActionButton(
+                    onClick = { vm.go("register") },
+                    icon = { Icon(painterResource(R.drawable.ic_plus), contentDescription = null) },
+                    text = { Text("New address") },
+                    containerColor = GmFab,
+                    contentColor = Color(0xFF002117)
+                )
+            }
+        ) { pad ->
+            Column(Modifier.padding(pad).fillMaxSize()) {
+                Surface(
+                    shape = CircleShape,
+                    color = GmCard,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).height(56.dp)
+                ) {
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            if (searching) { searching = false; query = "" } else scope.launch { drawer.open() }
+                        }) {
+                            Icon(
+                                painterResource(if (searching) R.drawable.ic_arrow_left else R.drawable.ic_menu),
+                                contentDescription = if (searching) "Close search" else "Menu"
+                            )
+                        }
+                        if (searching) {
+                            LaunchedEffect(Unit) { focus.requestFocus() }
+                            TextField(
+                                value = query,
+                                onValueChange = { query = it },
+                                singleLine = true,
+                                placeholder = { Text("Search in mail") },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                modifier = Modifier.weight(1f).focusRequester(focus)
+                            )
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { query = "" }) {
+                                    Icon(painterResource(R.drawable.ic_x), contentDescription = "Clear")
+                                }
+                            }
+                        } else {
+                            Box(
+                                Modifier.weight(1f).fillMaxHeight().clickable { searching = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Search in mail",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                         Box {
-                            IconButton(onClick = { switcher = true }) {
-                                Icon(painterResource(R.drawable.ic_users), contentDescription = "Switch address")
+                            val hue = (abs(a.address.lowercase().hashCode()) % 360).toFloat()
+                            Box(
+                                Modifier.size(36.dp).background(Color.hsv(hue, 0.45f, 0.75f), CircleShape)
+                                    .clickable { switcher = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    a.address.trim().firstOrNull()?.uppercase() ?: "?",
+                                    color = Color.White, fontWeight = FontWeight.Bold
+                                )
                             }
                             DropdownMenu(expanded = switcher, onDismissRequest = { switcher = false }) {
                                 vm.accounts.forEach { acc ->
@@ -650,106 +812,79 @@ fun HomeScreen(vm: DriftVM) {
                                         onClick = { switcher = false; vm.switchTo(acc) }
                                     )
                                 }
+                                DropdownMenuItem(text = { Text("Add address") }, onClick = {
+                                    switcher = false
+                                    vm.go("login")
+                                })
                             }
                         }
-                    }
-                    IconButton(onClick = { vm.refresh() }) {
-                        Icon(painterResource(R.drawable.ic_refresh), contentDescription = "Refresh")
-                    }
-                    Box {
-                        IconButton(onClick = { menu = true }) {
-                            Icon(painterResource(R.drawable.ic_more), contentDescription = "Menu")
-                        }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Copy address") }, onClick = {
-                                menu = false
-                                clipboard.setText(AnnotatedString(a.address))
-                                Toast.makeText(ctx, "Address copied", Toast.LENGTH_SHORT).show()
-                            })
-                            DropdownMenuItem(text = { Text("Add address") }, onClick = {
-                                menu = false
-                                vm.go("login")
-                            })
-                            DropdownMenuItem(text = { Text("Settings") }, onClick = {
-                                menu = false
-                                vm.go("settings")
-                            })
-                            DropdownMenuItem(text = { Text("About and limits") }, onClick = {
-                                menu = false
-                                vm.go("about")
-                            })
-                            DropdownMenuItem(text = { Text("Delete this address") }, onClick = {
-                                menu = false
-                                dialog = "delete"
-                            })
-                            DropdownMenuItem(text = { Text("Sign out") }, onClick = {
-                                menu = false
-                                dialog = "signout"
-                            })
-                        }
+                        Spacer(Modifier.width(10.dp))
                     }
                 }
-            )
-        }
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            Row(
-                Modifier.padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(!vm.onlyUnread, { vm.onlyUnread = false }, { Text("All") })
-                FilterChip(
-                    vm.onlyUnread, { vm.onlyUnread = true },
-                    { Text("Unread (${vm.messages.count { !it.seen }})") }
-                )
-            }
-            if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            val ageDays = if (a.created > 0L) ((System.currentTimeMillis() - a.created) / DAY_MS).toInt() else 0
-            if (vm.remindDays > 0 && a.created > 0L && ageDays >= vm.remindDays && !bannerHidden) {
-                Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    Row(
-                        Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                val ageDays = if (a.created > 0L) ((System.currentTimeMillis() - a.created) / DAY_MS).toInt() else 0
+                if (vm.remindDays > 0 && a.created > 0L && ageDays >= vm.remindDays && !bannerHidden) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            "This address is $ageDays days old. Mail.tm can remove addresses at any time." +
-                                if (vm.autoDeleteDays > 0) " It is deleted automatically after ${vm.autoDeleteDays} days." else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = { bannerHidden = true; vm.dismissBanner(a) }) { Text("Dismiss") }
-                    }
-                }
-            }
-            vm.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
-            }
-            PullToRefreshBox(
-                isRefreshing = vm.refreshing,
-                onRefresh = { vm.pullRefresh() },
-                modifier = Modifier.weight(1f)
-            ) {
-            LazyColumn(Modifier.fillMaxSize()) {
-                if (list.isEmpty() && !vm.loading) {
-                    item {
-                        Column(
-                            Modifier.fillMaxWidth().padding(48.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Row(
+                            Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                painterResource(R.drawable.ic_inbox), null, Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.outline
+                            Text(
+                                "This address is $ageDays days old. Mail.tm can remove addresses at any time." +
+                                    if (vm.autoDeleteDays > 0) " It is deleted automatically after ${vm.autoDeleteDays} days." else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Text(if (vm.onlyUnread) "No unread messages" else "No emails yet")
+                            TextButton(onClick = { bannerHidden = true; vm.dismissBanner(a) }) { Text("Dismiss") }
                         }
                     }
                 }
-                items(list, key = { it.id }) { m ->
-                    SwipeRow(m, onDelete = { vm.deleteInline(m) }, onClick = { vm.open(m) })
-                    HorizontalDivider()
+                vm.error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
                 }
-            }
+                PullToRefreshBox(
+                    isRefreshing = vm.refreshing,
+                    onRefresh = { vm.pullRefresh() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        item {
+                            Text(
+                                if (q.isNotEmpty()) "Search results" else if (vm.onlyUnread) "Unread" else "Inbox",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 8.dp)
+                            )
+                        }
+                        if (list.isEmpty() && !vm.loading) {
+                            item {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(48.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_inbox), null, Modifier.size(48.dp),
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        if (q.isNotEmpty()) "No results" else if (vm.onlyUnread) "No unread messages" else "No emails yet"
+                                    )
+                                }
+                            }
+                        }
+                        items(list, key = { it.id }) { m ->
+                            SwipeRow(m, onDelete = { vm.deleteInline(m) }, onClick = { vm.open(m) })
+                        }
+                    }
+                }
             }
         }
     }
@@ -787,19 +922,21 @@ fun SwipeRow(m: Msg, onDelete: () -> Unit, onClick: () -> Unit) {
             } else false
         }
     )
-    SwipeToDismissBox(
-        state = state,
-        backgroundContent = {
-            Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp),
-                contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd)
-                    Alignment.CenterStart else Alignment.CenterEnd
-            ) {
-                Icon(painterResource(R.drawable.ic_trash), contentDescription = "Delete")
+    Surface(shape = RoundedCornerShape(16.dp), color = GmCard) {
+        SwipeToDismissBox(
+            state = state,
+            backgroundContent = {
+                Box(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp),
+                    contentAlignment = if (state.dismissDirection == SwipeToDismissBoxValue.StartToEnd)
+                        Alignment.CenterStart else Alignment.CenterEnd
+                ) {
+                    Icon(painterResource(R.drawable.ic_trash), contentDescription = "Delete")
+                }
             }
+        ) {
+            Surface(color = if (m.seen) GmRead else GmCard) { MsgRow(m, onClick) }
         }
-    ) {
-        Surface { MsgRow(m, onClick) }
     }
 }
 
@@ -808,31 +945,41 @@ fun MsgRow(m: Msg, onClick: () -> Unit) {
     val w = if (m.seen) FontWeight.Normal else FontWeight.Bold
     val hue = (abs(m.from.lowercase().hashCode()) % 360).toFloat()
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.Top
     ) {
         Box(
-            Modifier.size(40.dp).background(Color.hsv(hue, 0.45f, 0.75f), CircleShape),
+            Modifier.size(44.dp).background(Color.hsv(hue, 0.45f, 0.75f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 m.from.trim().firstOrNull()?.uppercase() ?: "?",
-                color = Color.White, fontWeight = FontWeight.Bold
+                color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium
             )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(m.from, fontWeight = w, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    m.from, fontWeight = w, style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(fmtShort(m.date), style = MaterialTheme.typography.labelMedium, fontWeight = w)
+                if (!m.seen) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                }
+            }
             Text(m.subject, fontWeight = w, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (m.intro.isNotBlank()) {
                 Text(
-                    m.intro, style = MaterialTheme.typography.bodySmall,
+                    m.intro, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(fmtShort(m.date), style = MaterialTheme.typography.bodySmall, fontWeight = w)
     }
 }
 
