@@ -23,7 +23,7 @@ Next action: (1) push v1.2 and check the normal debug build is green, (2) do the
 - [ ] **v0.9 (optional)** Second provider mail.gw: same API at api.mail.gw and mercure.mail.gw, needs a provider field on every saved address.
 - [x] **v1.0** Release: signed release APK built by a separate Release workflow (tag `v*` or manual run), code shrinking/obfuscation (R8), debug builds now install side by side as "Driftbox (debug)", privacy note in About and PRIVACY.md, notifications hide content on the lock screen.
 - [ ] **v1.1** Reliable background running: Settings > "Keep running in background" asks Android to ignore battery optimization for Driftbox (adds REQUEST_IGNORE_BATTERY_OPTIMIZATIONS), shows whether it is on, and links to app settings for phone-brand auto-start lists. The watcher service, boot start and app-open start already existed from v1.0.
-- [ ] **v1.2** Gmail-style look: green/mint theme, rounded search pill (searches the loaded messages of the open address) with menu button and address avatar, side drawer (Inbox, Unread, addresses, Add address, Settings, About, Copy address, Delete, Sign out), rounded mail cards with round sender letters and an unread dot, "New address" button. The old filter chips and top-right menu were folded into the drawer. **<- we are here**
+- [ ] **v1.2** Gmail-style look: green/mint theme, rounded search pill (searches the loaded messages of the open address) with menu button and address avatar, side drawer (Inbox, Unread, Settings, Copy address, Delete, Sign out; "About and limits" and the "Powered by mail.tm" credit are pinned at the bottom so people see the limits; addresses and Add address live only in the top-right avatar menu), rounded mail cards with round sender letters and an unread dot, "New address" button. The old filter chips and top-right menu were folded into the drawer. **<- we are here**
 
 ## Release signing (one time, in Termux)
 
@@ -85,7 +85,7 @@ Then: GitHub > Actions > latest run > Artifacts > mailapp-debug.
 - No sending and no password reset in the API docs we read.
 - Live updates: Mercure server-sent events at https://mercure.mail.tm/.well-known/mercure?topic=/accounts/{id} with the Bearer token. We treat any event as "something changed" and reload the message list, so we do not depend on the event payload.
 - Limit: 8 requests per second per IP.
-- Terms: attribution link to mail.tm must stay visible (it lives in the About screen, reachable from the main menu; keep it reachable); no reselling, no proxying, no illegal use.
+- Terms: attribution link to mail.tm must stay visible (it lives in the About screen and also under "About and limits" at the bottom of the drawer; keep it visible); no reselling, no proxying, no illegal use.
 - Docs: https://docs.mail.tm
 
 ## Constraints and decisions

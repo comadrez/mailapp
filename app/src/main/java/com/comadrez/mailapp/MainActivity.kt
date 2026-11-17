@@ -687,44 +687,38 @@ fun HomeScreen(vm: DriftVM) {
         gesturesEnabled = drawer.isOpen,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = GmBg) {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        "Driftbox",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 28.dp, top = 28.dp, bottom = 20.dp)
-                    )
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                    DrawerItem("Inbox", R.drawable.ic_inbox, selected = !vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
-                        closeDrawer { vm.onlyUnread = false }
-                    }
-                    DrawerItem("Unread", R.drawable.ic_mail, selected = vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
-                        closeDrawer { vm.onlyUnread = true }
-                    }
-                    Text(
-                        "Addresses", style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 8.dp)
-                    )
-                    vm.accounts.forEach { acc ->
-                        DrawerItem(acc.address, R.drawable.ic_users, selected = acc.id == a.id) {
-                            closeDrawer { vm.switchTo(acc) }
+                Column(Modifier.fillMaxHeight()) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                        Text(
+                            "Driftbox",
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 28.dp, top = 28.dp, bottom = 20.dp)
+                        )
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                        DrawerItem("Inbox", R.drawable.ic_inbox, selected = !vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
+                            closeDrawer { vm.onlyUnread = false }
                         }
+                        DrawerItem("Unread", R.drawable.ic_mail, selected = vm.onlyUnread, badge = if (unreadCount > 0) unreadCount.toString() else null) {
+                            closeDrawer { vm.onlyUnread = true }
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                        DrawerItem("Settings", R.drawable.ic_sliders) { closeDrawer { vm.go("settings") } }
+                        DrawerItem("Copy address", R.drawable.ic_copy) {
+                            closeDrawer {
+                                clipboard.setText(AnnotatedString(a.address))
+                                Toast.makeText(ctx, "Address copied", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        DrawerItem("Delete this address", R.drawable.ic_trash) { closeDrawer { dialog = "delete" } }
+                        DrawerItem("Sign out", R.drawable.ic_log_out) { closeDrawer { dialog = "signout" } }
                     }
-                    DrawerItem("Add address", R.drawable.ic_plus) { closeDrawer { vm.go("login") } }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    DrawerItem("Settings", R.drawable.ic_sliders) { closeDrawer { vm.go("settings") } }
                     DrawerItem("About and limits", R.drawable.ic_info) { closeDrawer { vm.go("about") } }
-                    DrawerItem("Copy address", R.drawable.ic_copy) {
-                        closeDrawer {
-                            clipboard.setText(AnnotatedString(a.address))
-                            Toast.makeText(ctx, "Address copied", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    DrawerItem("Delete this address", R.drawable.ic_trash) { closeDrawer { dialog = "delete" } }
-                    DrawerItem("Sign out", R.drawable.ic_log_out) { closeDrawer { dialog = "signout" } }
-                    Spacer(Modifier.height(16.dp))
+                    Box(Modifier.padding(start = 28.dp)) { Attribution() }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
